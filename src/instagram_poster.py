@@ -111,57 +111,47 @@ class InstagramPoster:
         except Exception:
             pass  # Already in file select mode
 
-        # Upload files via file chooser interception
-        log.info(f"Uploading {len(image_paths)} slides...")
+        # ── Step 1: upload the first slide ──────────────────────────────────
+        log.info(f"Uploading slide 1 of {len(image_paths)}...")
+        self._upload_one_file(page, image_paths[0])
+        time.sleep(3)
 
-        # Strategy 1: "Select from computer" button triggers a file chooser dialog
-        uploaded = False
+        # ── Step 2: switch to carousel mode ("Select multiple") ──────────
         try:
-            with page.expect_file_chooser(timeout=8000) as fc_info:
-                select_btn = page.get_by_role("button", name="Select from computer").first
-                select_btn.wait_for(state="visible", timeout=6000)
-                select_btn.click()
-            fc_info.value.set_files([str(p) for p in image_paths])
-            uploaded = True
-            log.info("Uploaded via 'Select from computer' file chooser")
-        except Exception as e:
-            log.warning(f"Strategy 1 failed: {e}")
-
-        # Strategy 2: force-click the hidden file input — bypasses the 'multiple' restriction
-        # because FileChooser intercepted this way accepts multiple files regardless
-        if not uploaded:
-            try:
-                with page.expect_file_chooser(timeout=8000) as fc_info:
-                    page.locator('input[type="file"]').first.click(force=True)
-                fc_info.value.set_files([str(p) for p in image_paths])
-                uploaded = True
-                log.info("Uploaded via force-click file input + file chooser")
-            except Exception as e:
-                log.warning(f"Strategy 2 failed: {e}")
-
-        # Strategy 3: JS set multiple=true, then set_input_files
-        if not uploaded:
-            try:
-                page.evaluate(
-                    "document.querySelectorAll('input[type=\"file\"]')"
-                    ".forEach(el => { el.multiple = true; })"
-                )
-                time.sleep(0.5)
-                file_input = page.locator('input[type="file"]').first
-                file_input.set_input_files([str(p) for p in image_paths])
-                uploaded = True
-                log.info("Uploaded via JS multiple=true + set_input_files")
-            except Exception as e:
-                raise RuntimeError(f"All file upload strategies failed: {e}")
-
-        time.sleep(4)
-
-        # If Instagram prompts to select multiple for carousel, accept it
-        try:
-            page.get_by_role("button", name="Select multiple").click(timeout=3000)
-            time.sleep(1)
+            page.get_by_role("button", name="Select multiple").click(timeout=5000)
+            time.sleep(2)
+            log.info("Switched to carousel mode")
         except Exception:
-            pass
+            log.warning("'Select multiple' button not found — may already be in carousel mode")
+
+        # ── Step 3: add remaining slides via the '+' add-photo button ────
+        for idx, img_path in enumerate(image_paths[1:], start=2):
+            log.info(f"Adding slide {idx}...")
+            try:
+                with page.expect_file_chooser(timeout=10000) as fc_info:
+                    # The add-more button — try several aria-labels Instagram uses
+                    for sel in [
+                        '[aria-label="Add photos or videos"]',
+                        '[aria-label="Add"]',
+                        'button[class*="xjbqb8w"]:last-of-type',
+                    ]:
+                        try:
+                            btn = page.locator(sel).last
+                            if btn.is_visible(timeout=2000):
+                                btn.click()
+                                break
+                        except Exception:
+                            continue
+                    else:
+                        # Fallback: click any SVG "+" circle visible in the carousel strip
+                        page.locator('svg[aria-label="Add"]').last.click(timeout=3000)
+                fc_info.value.set_files([str(img_path)])
+                time.sleep(2)
+                log.info(f"Slide {idx} added")
+            except Exception as e:
+                log.warning(f"Could not add slide {idx}: {e}")
+
+        time.sleep(2)
 
         # OK button on any aspect-ratio / crop dialog
         try:
@@ -217,6 +207,24 @@ class InstagramPoster:
 
         time.sleep(3)
         return "posted"
+
+    def _upload_one_file(self, page, img_path: Path) -> None:
+        """Upload a single image file to whatever file input is on the current page."""
+        # Try file chooser via "Select from computer" button
+        try:
+            with page.expect_file_chooser(timeout=6000) as fc_info:
+                page.get_by_role("button", name="Select from computer").first.click(timeout=4000)
+            fc_info.value.set_files([str(img_path)])
+            return
+        except Exception:
+            pass
+        # Fallback: JS force multiple=true then set_input_files (single file, always valid)
+        page.evaluate(
+            "document.querySelectorAll('input[type=\"file\"]')"
+            ".forEach(el => { el.multiple = true; })"
+        )
+        time.sleep(0.3)
+        page.locator('input[type="file"]').first.set_input_files([str(img_path)])
 
     def _click_next(self, page, step: str = "") -> None:
         try:
