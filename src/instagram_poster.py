@@ -100,22 +100,11 @@ class InstagramPoster:
             return False
 
     def _fresh_login(self, session_path: Path) -> None:
-        log.info(f"Logging in as {self.username}...")
-        try:
-            self.client.login(self.username, self.password)
-        except TwoFactorRequired:
-            raise RuntimeError(
-                "Two-factor authentication is required. "
-                "Disable 2FA or use an app password for this account."
-            )
-
-        # Save session and print new base64 for GitHub Secret update
-        session_path.parent.mkdir(parents=True, exist_ok=True)
-        self.client.dump_settings(str(session_path))
-        new_b64 = base64.b64encode(session_path.read_bytes()).decode()
-        # This is captured by the GitHub Actions post-step to update the secret
-        print(f"NEW_SESSION_B64={new_b64}")
-        log.info("Session saved. Update INSTA_SESSION secret with the NEW_SESSION_B64 above.")
+        raise RuntimeError(
+            "No valid INSTA_SESSION found. "
+            "Run 'python create_session.py' locally to generate a session, "
+            "then add it as the INSTA_SESSION GitHub Secret."
+        )
 
     def _validate_images(self, paths: list[Path]) -> None:
         if len(paths) < 2:
