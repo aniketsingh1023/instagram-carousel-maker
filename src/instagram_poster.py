@@ -81,45 +81,65 @@ class InstagramPoster:
                 "Session expired. Run 'python create_session.py' again and update INSTA_SESSION."
             )
 
-        log.info("Logged in, navigating to create post via direct URL...")
+        log.info(f"Logged in at {page.url}. Opening create modal...")
 
-        # Navigate directly to the create page — avoids brittle sidebar button clicks
-        page.goto("https://www.instagram.com/create/select/", wait_until="domcontentloaded")
-        time.sleep(3)
+        # Click the sidebar "New post" / "+" button — it opens a modal (no URL change)
+        create_clicked = False
+        for selector in [
+            '[aria-label="New post"]',
+            'svg[aria-label="New post"]',
+            '[aria-label="Create"]',
+            'a[href="/create/style/select/"]',
+        ]:
+            try:
+                el = page.locator(selector).first
+                el.wait_for(state="visible", timeout=4000)
+                el.click()
+                create_clicked = True
+                log.info(f"Clicked create button via: {selector}")
+                time.sleep(3)
+                break
+            except Exception:
+                continue
 
-        # If redirected back to home (not on create page), try clicking the + button
-        if "/create/" not in page.url:
-            log.info("Direct URL redirected; trying sidebar create button...")
-            for selector in [
-                'a[href="/create/select/"]',
-                'svg[aria-label="New post"]',
-                '[aria-label="New post"]',
-            ]:
-                try:
-                    el = page.locator(selector).first
-                    if el.is_visible(timeout=3000):
-                        el.click()
-                        time.sleep(2)
-                        break
-                except Exception:
-                    continue
+        if not create_clicked:
+            # JS fallback — find any element with aria-label containing "new post" or "create"
+            found = page.evaluate("""
+                () => {
+                    const labels = ['New post', 'Create', 'new post'];
+                    for (const label of labels) {
+                        const el = document.querySelector(`[aria-label="${label}"]`);
+                        if (el) {
+                            const btn = el.closest('a, button, [role="button"]') || el;
+                            btn.click();
+                            return label;
+                        }
+                    }
+                    return null;
+                }
+            """)
+            if found:
+                log.info(f"Clicked create button via JS eval: {found}")
+                time.sleep(3)
+                create_clicked = True
+            else:
+                log.warning("Could not find create button — modal may not open")
 
-        # Debug: screenshot + log URL so we know exactly what Instagram is showing
-        log.info(f"Current URL after navigation: {page.url}")
+        # Screenshot after clicking create
         try:
-            page.screenshot(path="data/debug_01_create_page.png", full_page=True)
-            log.info("Screenshot saved: debug_01_create_page.png")
-        except Exception as se:
-            log.warning(f"Screenshot failed: {se}")
+            page.screenshot(path="data/debug_01_after_create_click.png", full_page=False)
+            log.info(f"Screenshot saved. URL: {page.url}")
+        except Exception:
+            pass
 
-        # Click "Post" if a type-selection dialog appears (Stories / Post / Reel picker)
+        # Click "Post" tab if type picker appears (Post / Story / Reel)
         try:
             page.get_by_role("button", name="Post").first.click(timeout=4000)
             time.sleep(1)
         except Exception:
-            pass  # Already in file select mode
+            pass
 
-        # ── Upload all slides at once via desktop 'Select from computer' ──
+        # ── Upload all slides via the modal's "Select from computer" button ──
         log.info(f"Uploading {len(image_paths)} slides...")
         try:
             with page.expect_file_chooser(timeout=12000) as fc_info:
@@ -138,10 +158,9 @@ class InstagramPoster:
             )
             log.info("All slides uploaded via JS multiple=true fallback")
 
-        # Screenshot after upload to see what Instagram shows
+        # Screenshot after upload
         try:
-            page.screenshot(path="data/debug_02_after_upload.png", full_page=True)
-            log.info("Screenshot saved: debug_02_after_upload.png")
+            page.screenshot(path="data/debug_02_after_upload.png", full_page=False)
         except Exception:
             pass
 
