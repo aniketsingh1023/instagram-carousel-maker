@@ -1,83 +1,65 @@
 """
-Run this ONCE locally to create your Instagram session using your browser session ID.
-This avoids the API login (which gets IP-blocked) entirely.
-
-HOW TO GET YOUR SESSION ID:
-1. Open instagram.com in Chrome/Safari and log in normally
-2. Open DevTools (F12 or right-click → Inspect)
-3. Go to Application tab → Cookies → https://www.instagram.com
-4. Find the cookie named 'sessionid' and copy its value
-5. Paste it when prompted below
+Run this ONCE locally to log into Instagram in a real browser and save the session.
+Opens a visible Chrome window so you can log in normally (including any 2FA/challenge).
 
 Usage:
     python create_session.py
+
+After login, copy the printed INSTA_SESSION value to your GitHub Secret.
 """
 
 import base64
-import os
+import json
 from pathlib import Path
 
-from dotenv import load_dotenv
-from instagrapi import Client
+from playwright.sync_api import sync_playwright
 
-load_dotenv()
-
-SESSION_FILE = Path("data/ig_session.json")
-SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+STORAGE_FILE = Path("data/ig_browser_state.json")
+STORAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 print("=" * 60)
-print("Instagram Session Creator")
+print("Opening Instagram in Chrome — log in normally.")
+print("Close the browser OR press Enter here when done.")
 print("=" * 60)
 print()
-print("To get your session ID:")
-print("  1. Open instagram.com in Chrome/Safari, log in")
-print("  2. Press F12 → Application tab → Cookies → instagram.com")
-print("  3. Find 'sessionid' cookie and copy its value")
-print()
 
-session_id = input("Paste your sessionid cookie value here: ").strip()
-if not session_id:
-    print("Error: sessionid cannot be empty")
-    exit(1)
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=False, slow_mo=50)
+    context = browser.new_context(
+        viewport={"width": 1280, "height": 900},
+        user_agent=(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+    )
+    page = context.new_page()
+    page.goto("https://www.instagram.com/accounts/login/")
 
-print("\nCreating session from browser cookie...")
+    print("Waiting for you to log in... (press Enter in this terminal when done)")
+    input()
 
-cl = Client()
-cl.delay_range = [3, 7]
-cl.set_device({
-    "app_version": "269.0.0.18.75",
-    "android_version": 26,
-    "android_release": "8.0.0",
-    "dpi": "460dpi",
-    "resolution": "1080x2340",
-    "manufacturer": "Apple",
-    "device": "iPhone13,2",
-    "model": "iPhone 13",
-    "cpu": "apple_a15_bionic",
-    "version_code": "314665256",
-})
+    # Check if logged in
+    page.goto("https://www.instagram.com/")
+    page.wait_for_load_state("networkidle")
 
-try:
-    cl.login_by_sessionid(session_id)
-    user = cl.account_info()
-    print(f"Logged in as: @{user.username} ✓")
-except Exception as e:
-    print(f"Error: {e}")
-    print("\nMake sure you copied the full sessionid value from the cookie.")
-    exit(1)
+    if "login" in page.url:
+        print("Not logged in yet! Please log in first, then press Enter.")
+        input()
 
-# Save session
-cl.dump_settings(str(SESSION_FILE))
-session_b64 = base64.b64encode(SESSION_FILE.read_bytes()).decode()
+    # Save browser state (cookies + localStorage)
+    context.storage_state(path=str(STORAGE_FILE))
+    browser.close()
+
+# Encode as base64
+state_b64 = base64.b64encode(STORAGE_FILE.read_bytes()).decode()
 
 print()
 print("=" * 60)
 print("SUCCESS! Add this as GitHub Secret named INSTA_SESSION:")
 print("=" * 60)
-print(session_b64)
+print(state_b64)
 print("=" * 60)
 print()
-print("→ Go to: https://github.com/aniketsingh1023/instagram-carousel-maker/settings/secrets/actions")
-print("→ Click 'New repository secret'")
-print("→ Name: INSTA_SESSION")
-print("→ Value: paste the long string above")
+print("→ https://github.com/aniketsingh1023/instagram-carousel-maker/settings/secrets/actions")
+print("→ Find INSTA_SESSION → Edit → paste the value above → Save")

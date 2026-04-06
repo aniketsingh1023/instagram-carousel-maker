@@ -1,22 +1,19 @@
-"""Posts carousel images to Instagram using instagrapi."""
+"""Posts carousel images to Instagram using Playwright (real browser automation)."""
 
 import base64
+import json
 import logging
 import os
 import time
 from pathlib import Path
 
-from instagrapi import Client
-from instagrapi.exceptions import (
-    ChallengeRequired,
-    LoginRequired,
-    TwoFactorRequired,
-)
-from PIL import Image
+from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
 from config import SESSION_FILE, DELAY_RANGE
 
 log = logging.getLogger(__name__)
+
+STORAGE_FILE = Path("data/ig_browser_state.json")
 
 
 class InstagramPoster:
@@ -24,122 +21,159 @@ class InstagramPoster:
         self.username = username
         self.password = password
         self.session_b64 = session_b64
-        self.client = Client()
-        self.client.delay_range = DELAY_RANGE
-        # Simulate iPhone 13 — matches a real common device to avoid bot detection
-        self.client.set_device({
-            "app_version": "269.0.0.18.75",
-            "android_version": 26,
-            "android_release": "8.0.0",
-            "dpi": "460dpi",
-            "resolution": "1080x2340",
-            "manufacturer": "Apple",
-            "device": "iPhone13,2",
-            "model": "iPhone 13",
-            "cpu": "apple_a15_bionic",
-            "version_code": "314665256",
-        })
 
     def login(self) -> None:
-        session_path = Path(SESSION_FILE)
-
-        if self.session_b64:
-            value = self.session_b64.strip()
-
-            # Detect if it's a raw sessionid cookie (not base64 JSON)
-            # Raw sessionids look like: 61986645064%3Axxx or 61986645064:xxx
-            if self._looks_like_sessionid(value):
-                import urllib.parse
-                sessionid = urllib.parse.unquote(value)
-                log.info("Detected raw sessionid — logging in via sessionid...")
-                try:
-                    self.client.login_by_sessionid(sessionid)
-                    log.info("Login by sessionid successful!")
-                    return
-                except Exception as e:
-                    raise RuntimeError(f"sessionid login failed: {e}") from e
-
-            # Otherwise treat as base64-encoded JSON settings file
-            self._restore_session(value, session_path)
-            if self._ping_session():
-                log.info("Session restored successfully")
-                return
-            log.warning("Stored session invalid, performing fresh login...")
-
-        self._fresh_login(session_path)
+        """Validate session exists. Actual browser is launched per-post."""
+        if not self.session_b64:
+            raise RuntimeError(
+                "No INSTA_SESSION found.\n"
+                "Run 'python create_session.py' locally to generate one,\n"
+                "then add it as the INSTA_SESSION GitHub Secret."
+            )
+        # Decode and write storage state to disk
+        try:
+            STORAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            state_json = base64.b64decode(self.session_b64.strip()).decode()
+            json.loads(state_json)  # validate it's proper JSON
+            STORAGE_FILE.write_text(state_json)
+            log.info("Browser session loaded from secret")
+        except Exception as e:
+            raise RuntimeError(
+                f"Invalid INSTA_SESSION — run 'python create_session.py' again: {e}"
+            ) from e
 
     def post_carousel(self, image_paths: list[Path], caption: str) -> str:
-        self._validate_images(image_paths)
-
         dry_run = os.getenv("DRY_RUN", "false").lower() == "true"
         if dry_run:
-            log.info("[DRY RUN] Would post carousel with caption:")
-            log.info(caption[:200])
-            log.info(f"[DRY RUN] Images: {[str(p) for p in image_paths]}")
-            return "DRY_RUN_NO_POST_ID"
+            log.info("[DRY RUN] Skipping actual post")
+            log.info(f"[DRY RUN] Caption: {caption[:120]}")
+            log.info(f"[DRY RUN] Slides: {[p.name for p in image_paths]}")
+            return "DRY_RUN"
 
-        log.info(f"Uploading {len(image_paths)}-slide carousel to Instagram...")
-        try:
-            media = self.client.album_upload(
-                paths=[str(p) for p in image_paths],
-                caption=caption,
+        self._validate_images(image_paths)
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                storage_state=str(STORAGE_FILE),
+                viewport={"width": 1280, "height": 900},
+                user_agent=(
+                    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+                    "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+                    "Version/17.0 Mobile/15E148 Safari/604.1"
+                ),
             )
-            post_id = str(media.pk)
-            log.info(f"Posted successfully! Media ID: {post_id}")
-            return post_id
-        except ChallengeRequired as e:
+            try:
+                post_id = self._do_post(context, image_paths, caption)
+                return post_id
+            finally:
+                context.close()
+                browser.close()
+
+    def _do_post(self, context, image_paths: list[Path], caption: str) -> str:
+        page = context.new_page()
+        page.goto("https://www.instagram.com/", wait_until="domcontentloaded")
+        time.sleep(3)
+
+        # Verify logged in
+        if "login" in page.url or page.query_selector('input[name="username"]'):
             raise RuntimeError(
-                "Instagram challenge required. Log in manually once via the app "
-                "and update the INSTA_SESSION secret."
-            ) from e
-        except LoginRequired as e:
-            raise RuntimeError(
-                "Instagram session expired. Clear INSTA_SESSION secret and re-run."
-            ) from e
+                "Session expired. Run 'python create_session.py' again and update INSTA_SESSION."
+            )
 
-    # ── Private ────────────────────────────────────────────────────────────────
+        log.info("Logged in, navigating to create post...")
 
-    def _restore_session(self, b64: str, session_path: Path) -> None:
+        # Click the Create / + button
         try:
-            session_path.parent.mkdir(parents=True, exist_ok=True)
-            session_path.write_bytes(base64.b64decode(b64))
-            self.client.load_settings(str(session_path))
-            log.info("Session loaded from base64 secret")
-        except Exception as e:
-            log.warning(f"Failed to restore session: {e}")
-
-    def _looks_like_sessionid(self, value: str) -> bool:
-        """Raw sessionids start with digits (user ID) followed by : or %3A."""
-        import re
-        return bool(re.match(r'^\d{5,20}(%3A|:)', value))
-
-    def _ping_session(self) -> bool:
-        try:
-            self.client.get_timeline_feed()
-            return True
+            # Try SVG icon button (desktop layout)
+            create_btn = page.locator('a[href="/create/select/"]').first
+            if not create_btn.is_visible(timeout=3000):
+                raise PWTimeout("not visible")
+            create_btn.click()
         except Exception:
-            return False
+            # Fallback: click by aria label
+            page.get_by_label("New post").first.click()
 
-    def _fresh_login(self, session_path: Path) -> None:
-        raise RuntimeError(
-            "No valid INSTA_SESSION found. "
-            "Run 'python create_session.py' locally to generate a session, "
-            "then add it as the INSTA_SESSION GitHub Secret."
-        )
+        time.sleep(2)
+
+        # Click "Post" if a type-selection dialog appears
+        try:
+            page.get_by_role("button", name="Post").first.click(timeout=3000)
+            time.sleep(1)
+        except Exception:
+            pass  # Already in file select mode
+
+        # Upload images via hidden file input
+        log.info(f"Uploading {len(image_paths)} slides...")
+        file_input = page.locator('input[type="file"]').first
+        file_input.set_files([str(p) for p in image_paths])
+        time.sleep(3)
+
+        # If Instagram asks to select multiple for carousel, click it
+        try:
+            page.get_by_role("button", name="Select multiple").click(timeout=3000)
+            time.sleep(1)
+        except Exception:
+            pass
+
+        # Click through crop step
+        self._click_next(page, step="crop")
+
+        # Click through filter step
+        self._click_next(page, step="filters")
+
+        # Caption step — add caption
+        log.info("Adding caption...")
+        try:
+            caption_box = page.locator('[aria-label="Write a caption..."]').first
+            caption_box.wait_for(timeout=8000)
+            caption_box.click()
+            caption_box.fill(caption[:2200])  # Instagram 2200 char limit
+        except Exception as e:
+            log.warning(f"Caption input error: {e}")
+
+        time.sleep(1)
+
+        # Share / Post
+        log.info("Sharing post...")
+        try:
+            page.get_by_role("button", name="Share").click(timeout=5000)
+        except Exception:
+            page.get_by_role("button", name="Post").click(timeout=5000)
+
+        # Wait for success confirmation
+        try:
+            page.wait_for_selector(
+                'text=Your post has been shared, [aria-label="Like"], '
+                '[data-testid="post-shared"]',
+                timeout=30000,
+            )
+            log.info("Post shared successfully!")
+        except Exception:
+            # May have posted even without confirmation dialog
+            log.warning("Could not confirm post success, but may have worked")
+
+        time.sleep(2)
+        return "posted"
+
+    def _click_next(self, page, step: str = "") -> None:
+        try:
+            btn = page.get_by_role("button", name="Next").first
+            btn.wait_for(timeout=8000)
+            btn.click()
+            time.sleep(2)
+            log.info(f"Clicked Next ({step})")
+        except Exception as e:
+            log.warning(f"Next button ({step}): {e}")
 
     def _validate_images(self, paths: list[Path]) -> None:
+        from PIL import Image
         if len(paths) < 2:
-            raise ValueError(f"Need at least 2 images for a carousel, got {len(paths)}")
-        if len(paths) > 10:
-            raise ValueError(f"Instagram allows max 10 images, got {len(paths)}")
-
+            raise ValueError(f"Need at least 2 images, got {len(paths)}")
         for path in paths:
             if not path.exists():
-                raise FileNotFoundError(f"Slide not found: {path}")
-            try:
-                img = Image.open(path)
-                w, h = img.size
-                if w != 1080 or h != 1080:
-                    raise ValueError(f"{path.name} must be 1080x1080, got {w}x{h}")
-            except Exception as e:
-                raise ValueError(f"Invalid image {path.name}: {e}") from e
+                raise FileNotFoundError(f"Missing slide: {path}")
+            img = Image.open(path)
+            w, h = img.size
+            if w != 1080 or h != 1080:
+                raise ValueError(f"{path.name} must be 1080x1080, got {w}x{h}")
