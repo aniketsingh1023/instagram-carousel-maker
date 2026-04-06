@@ -1,0 +1,9 @@
+.env
+data/slides/
+data/*.json
+data/run.log
+data/ig_session.json
+data/ig_session_b64.txt
+__pycache__/
+*.pyc
+.DS_Store
