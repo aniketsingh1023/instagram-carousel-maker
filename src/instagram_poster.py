@@ -26,6 +26,19 @@ class InstagramPoster:
         self.session_b64 = session_b64
         self.client = Client()
         self.client.delay_range = DELAY_RANGE
+        # Simulate iPhone 13 — matches a real common device to avoid bot detection
+        self.client.set_device({
+            "app_version": "269.0.0.18.75",
+            "android_version": 26,
+            "android_release": "8.0.0",
+            "dpi": "460dpi",
+            "resolution": "1080x2340",
+            "manufacturer": "Apple",
+            "device": "iPhone13,2",
+            "model": "iPhone 13",
+            "cpu": "apple_a15_bionic",
+            "version_code": "314665256",
+        })
 
     def login(self) -> None:
         session_path = Path(SESSION_FILE)

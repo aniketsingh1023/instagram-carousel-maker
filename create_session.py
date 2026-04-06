@@ -27,6 +27,18 @@ password = os.getenv("INSTA_PASSWORD") or input("Instagram password: ").strip()
 
 cl = Client()
 cl.delay_range = [3, 7]
+cl.set_device({
+    "app_version": "269.0.0.18.75",
+    "android_version": 26,
+    "android_release": "8.0.0",
+    "dpi": "460dpi",
+    "resolution": "1080x2340",
+    "manufacturer": "Apple",
+    "device": "iPhone13,2",
+    "model": "iPhone 13",
+    "cpu": "apple_a15_bionic",
+    "version_code": "314665256",
+})
 
 print(f"\nLogging in as {username}...")
 
