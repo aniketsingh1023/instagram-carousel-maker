@@ -76,6 +76,7 @@ def _detect_icon_slug(topic: str) -> str | None:
 def fetch_logo(topic: str, size: int = 220, color: str = "00d4ff") -> Image.Image | None:
     """
     Fetch the SimpleIcons logo for the given topic as a PIL RGBA Image.
+    Downloads raw SVG from the simpleicons GitHub repo (no CDN auth issues).
     Returns None if no matching icon is found or download fails.
     """
     slug = _detect_icon_slug(topic)
@@ -83,19 +84,33 @@ def fetch_logo(topic: str, size: int = 220, color: str = "00d4ff") -> Image.Imag
         log.info(f"No icon found for topic: {topic!r}")
         return None
 
-    url = f"https://cdn.simpleicons.org/{slug}/{color}"
+    # Use raw GitHub (simpleicons repo) — no rate limiting or auth issues
+    url = (
+        f"https://raw.githubusercontent.com/simple-icons/simple-icons"
+        f"/develop/icons/{slug}.svg"
+    )
+    headers = {"User-Agent": "carousel-maker/1.0"}
     try:
-        resp = requests.get(url, timeout=10)
+        resp = requests.get(url, timeout=10, headers=headers)
+        if resp.status_code == 404:
+            log.info(f"No icon in simple-icons for slug={slug!r}")
+            return None
         resp.raise_for_status()
-        svg_bytes = resp.content
 
-        # Ensure it's actually SVG (not an error HTML page)
+        svg_bytes = resp.content
         if not svg_bytes.strip().startswith(b"<"):
-            log.warning(f"SimpleIcons returned non-SVG for slug={slug!r}")
+            log.warning(f"Got non-SVG response for slug={slug!r}")
             return None
 
+        # Colorize: replace fill with our cyan color
+        svg_colored = svg_bytes.decode().replace(
+            'fill="currentColor"', f'fill="#{color}"'
+        ).replace(
+            "currentColor", f"#{color}"
+        ).encode()
+
         png_bytes = cairosvg.svg2png(
-            bytestring=svg_bytes,
+            bytestring=svg_colored,
             output_width=size,
             output_height=size,
         )
