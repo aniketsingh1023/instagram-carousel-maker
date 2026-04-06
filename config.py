@@ -68,7 +68,7 @@ CRON_MORNING = "30 2 * * *"   # 08:00 IST = 02:30 UTC
 CRON_EVENING = "30 13 * * *"  # 19:00 IST = 13:30 UTC
 
 # ── Gemini ────────────────────────────────────────────────────────────────────
-GEMINI_MODEL  = "gemini-2.0-flash"
+GEMINI_MODEL  = "gemini-2.5-flash"
 MAX_RETRIES   = 4
 BASE_DELAY    = 5  # seconds
 
