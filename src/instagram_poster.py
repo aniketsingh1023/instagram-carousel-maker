@@ -132,10 +132,32 @@ class InstagramPoster:
         except Exception:
             pass
 
-        # Click "Post" tab if type picker appears (Post / Story / Reel)
+        # Click "Post" from the submenu that appeared (Post / Live video / Ad / AI)
+        post_clicked = False
+        for sel in [
+            'a[href="/create/style/"]',
+            'a:has-text("Post")',
+            '[role="menuitem"]:has-text("Post")',
+            'span:has-text("Post")',
+            'div:has-text("Post")',
+        ]:
+            try:
+                el = page.locator(sel).first
+                if el.is_visible(timeout=3000):
+                    el.click()
+                    post_clicked = True
+                    log.info(f"Clicked Post submenu via: {sel}")
+                    time.sleep(3)
+                    break
+            except Exception:
+                continue
+
+        if not post_clicked:
+            log.warning("Could not click Post submenu item")
+
+        # Screenshot after clicking Post — should show the file upload modal
         try:
-            page.get_by_role("button", name="Post").first.click(timeout=4000)
-            time.sleep(1)
+            page.screenshot(path="data/debug_01b_after_post_click.png", full_page=False)
         except Exception:
             pass
 

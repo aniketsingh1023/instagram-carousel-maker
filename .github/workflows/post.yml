@@ -121,6 +121,7 @@ jobs:
           path: |
             data/run.log
             data/debug_*.png
+            data/slides/
           retention-days: 2
 
       - name: Upload logs on failure
