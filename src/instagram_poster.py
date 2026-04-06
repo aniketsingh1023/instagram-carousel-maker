@@ -121,7 +121,7 @@ class InstagramPoster:
             select_btn.wait_for(state="visible", timeout=10000)
             with page.expect_file_chooser(timeout=8000) as fc_info:
                 select_btn.click()
-            fc_info.value.set_files([str(p) for p in image_paths])
+            fc_info.value.set_files([str(p) for p in image_paths])  # FileChooser.set_files is correct
             uploaded = True
             log.info("Uploaded via file chooser (Select from computer)")
         except Exception as e:
@@ -132,7 +132,7 @@ class InstagramPoster:
             try:
                 file_input = page.locator('input[type="file"]').first
                 file_input.wait_for(state="attached", timeout=10000)
-                file_input.set_files([str(p) for p in image_paths])
+                file_input.set_input_files([str(p) for p in image_paths])
                 # Dispatch change event so React notices
                 page.evaluate(
                     """() => {
