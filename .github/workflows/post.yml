@@ -19,7 +19,6 @@ on:
 
 permissions:
   contents: read
-  secrets: write   # required to update INSTA_SESSION after fresh login
 
 jobs:
   post-carousel:
@@ -88,17 +87,13 @@ jobs:
           TOPIC_OVERRIDE:  ${{ github.event.inputs.topic_override || '' }}
         run: python main.py 2>&1 | tee data/run.log
 
-      - name: Update session secret if refreshed
+      - name: Check if session was refreshed
         if: always()
         run: |
           NEW_SESSION=$(grep "^NEW_SESSION_B64=" data/run.log 2>/dev/null | tail -1 | cut -d= -f2-)
           if [ -n "$NEW_SESSION" ]; then
-            echo "Updating INSTA_SESSION secret..."
-            echo "$NEW_SESSION" | gh secret set INSTA_SESSION
-            echo "Secret updated."
+            echo "::warning::Session was refreshed. Copy the NEW_SESSION_B64 value from the logs and update the INSTA_SESSION secret manually."
           fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Save session cache
         if: always()
