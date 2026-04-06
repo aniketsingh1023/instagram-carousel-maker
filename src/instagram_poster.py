@@ -58,9 +58,9 @@ class InstagramPoster:
                 storage_state=str(STORAGE_FILE),
                 viewport={"width": 1280, "height": 900},
                 user_agent=(
-                    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
-                    "AppleWebKit/605.1.15 (KHTML, like Gecko) "
-                    "Version/17.0 Mobile/15E148 Safari/604.1"
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
                 ),
             )
             try:
@@ -111,47 +111,27 @@ class InstagramPoster:
         except Exception:
             pass  # Already in file select mode
 
-        # ── Step 1: upload the first slide ──────────────────────────────────
-        log.info(f"Uploading slide 1 of {len(image_paths)}...")
-        self._upload_one_file(page, image_paths[0])
-        time.sleep(3)
-
-        # ── Step 2: switch to carousel mode ("Select multiple") ──────────
+        # ── Upload all slides at once via desktop 'Select from computer' ──
+        log.info(f"Uploading {len(image_paths)} slides...")
         try:
-            page.get_by_role("button", name="Select multiple").click(timeout=5000)
-            time.sleep(2)
-            log.info("Switched to carousel mode")
-        except Exception:
-            log.warning("'Select multiple' button not found — may already be in carousel mode")
+            with page.expect_file_chooser(timeout=12000) as fc_info:
+                page.get_by_role("button", name="Select from computer").first.click(timeout=10000)
+            fc_info.value.set_files([str(p) for p in image_paths])
+            log.info("All slides uploaded via 'Select from computer' file chooser")
+        except Exception as e:
+            log.warning(f"File chooser failed ({e}), trying JS fallback...")
+            # JS fallback: force multiple, upload all at once
+            page.evaluate(
+                "document.querySelectorAll('input[type=\"file\"]')"
+                ".forEach(el => { el.multiple = true; })"
+            )
+            time.sleep(0.3)
+            page.locator('input[type="file"]').first.set_input_files(
+                [str(p) for p in image_paths]
+            )
+            log.info("All slides uploaded via JS multiple=true fallback")
 
-        # ── Step 3: add remaining slides via the '+' add-photo button ────
-        for idx, img_path in enumerate(image_paths[1:], start=2):
-            log.info(f"Adding slide {idx}...")
-            try:
-                with page.expect_file_chooser(timeout=10000) as fc_info:
-                    # The add-more button — try several aria-labels Instagram uses
-                    for sel in [
-                        '[aria-label="Add photos or videos"]',
-                        '[aria-label="Add"]',
-                        'button[class*="xjbqb8w"]:last-of-type',
-                    ]:
-                        try:
-                            btn = page.locator(sel).last
-                            if btn.is_visible(timeout=2000):
-                                btn.click()
-                                break
-                        except Exception:
-                            continue
-                    else:
-                        # Fallback: click any SVG "+" circle visible in the carousel strip
-                        page.locator('svg[aria-label="Add"]').last.click(timeout=3000)
-                fc_info.value.set_files([str(img_path)])
-                time.sleep(2)
-                log.info(f"Slide {idx} added")
-            except Exception as e:
-                log.warning(f"Could not add slide {idx}: {e}")
-
-        time.sleep(2)
+        time.sleep(4)
 
         # OK button on any aspect-ratio / crop dialog
         try:
