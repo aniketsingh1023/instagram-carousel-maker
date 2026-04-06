@@ -44,9 +44,25 @@ class InstagramPoster:
         session_path = Path(SESSION_FILE)
 
         if self.session_b64:
-            self._restore_session(self.session_b64, session_path)
+            value = self.session_b64.strip()
+
+            # Detect if it's a raw sessionid cookie (not base64 JSON)
+            # Raw sessionids look like: 61986645064%3Axxx or 61986645064:xxx
+            if self._looks_like_sessionid(value):
+                import urllib.parse
+                sessionid = urllib.parse.unquote(value)
+                log.info("Detected raw sessionid — logging in via sessionid...")
+                try:
+                    self.client.login_by_sessionid(sessionid)
+                    log.info("Login by sessionid successful!")
+                    return
+                except Exception as e:
+                    raise RuntimeError(f"sessionid login failed: {e}") from e
+
+            # Otherwise treat as base64-encoded JSON settings file
+            self._restore_session(value, session_path)
             if self._ping_session():
-                log.info("Session restored successfully - no re-login needed")
+                log.info("Session restored successfully")
                 return
             log.warning("Stored session invalid, performing fresh login...")
 
@@ -91,6 +107,11 @@ class InstagramPoster:
             log.info("Session loaded from base64 secret")
         except Exception as e:
             log.warning(f"Failed to restore session: {e}")
+
+    def _looks_like_sessionid(self, value: str) -> bool:
+        """Raw sessionids start with digits (user ID) followed by : or %3A."""
+        import re
+        return bool(re.match(r'^\d{5,20}(%3A|:)', value))
 
     def _ping_session(self) -> bool:
         try:
