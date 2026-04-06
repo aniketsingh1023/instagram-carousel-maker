@@ -111,37 +111,46 @@ class InstagramPoster:
         except Exception:
             pass  # Already in file select mode
 
-        # Upload files — use file chooser interception (most reliable with React apps)
+        # Upload files via file chooser interception
         log.info(f"Uploading {len(image_paths)} slides...")
+
+        # Strategy 1: "Select from computer" button triggers a file chooser dialog
         uploaded = False
-
-        # Strategy 1: intercept the file chooser triggered by "Select from computer" button
         try:
-            select_btn = page.get_by_role("button", name="Select from computer").first
-            select_btn.wait_for(state="visible", timeout=10000)
             with page.expect_file_chooser(timeout=8000) as fc_info:
+                select_btn = page.get_by_role("button", name="Select from computer").first
+                select_btn.wait_for(state="visible", timeout=6000)
                 select_btn.click()
-            fc_info.value.set_files([str(p) for p in image_paths])  # FileChooser.set_files is correct
+            fc_info.value.set_files([str(p) for p in image_paths])
             uploaded = True
-            log.info("Uploaded via file chooser (Select from computer)")
+            log.info("Uploaded via 'Select from computer' file chooser")
         except Exception as e:
-            log.warning(f"File chooser strategy failed: {e}")
+            log.warning(f"Strategy 1 failed: {e}")
 
-        # Strategy 2: directly set files on the hidden input (React picks it up via dispatchEvent)
+        # Strategy 2: force-click the hidden file input — bypasses the 'multiple' restriction
+        # because FileChooser intercepted this way accepts multiple files regardless
         if not uploaded:
             try:
-                file_input = page.locator('input[type="file"]').first
-                file_input.wait_for(state="attached", timeout=10000)
-                file_input.set_input_files([str(p) for p in image_paths])
-                # Dispatch change event so React notices
-                page.evaluate(
-                    """() => {
-                        const input = document.querySelector('input[type="file"]');
-                        if (input) input.dispatchEvent(new Event('change', { bubbles: true }));
-                    }"""
-                )
+                with page.expect_file_chooser(timeout=8000) as fc_info:
+                    page.locator('input[type="file"]').first.click(force=True)
+                fc_info.value.set_files([str(p) for p in image_paths])
                 uploaded = True
-                log.info("Uploaded via direct file input + dispatchEvent")
+                log.info("Uploaded via force-click file input + file chooser")
+            except Exception as e:
+                log.warning(f"Strategy 2 failed: {e}")
+
+        # Strategy 3: JS set multiple=true, then set_input_files
+        if not uploaded:
+            try:
+                page.evaluate(
+                    "document.querySelectorAll('input[type=\"file\"]')"
+                    ".forEach(el => { el.multiple = true; })"
+                )
+                time.sleep(0.5)
+                file_input = page.locator('input[type="file"]').first
+                file_input.set_input_files([str(p) for p in image_paths])
+                uploaded = True
+                log.info("Uploaded via JS multiple=true + set_input_files")
             except Exception as e:
                 raise RuntimeError(f"All file upload strategies failed: {e}")
 
