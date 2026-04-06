@@ -73,7 +73,7 @@ class InstagramPoster:
     def _do_post(self, context, image_paths: list[Path], caption: str) -> str:
         page = context.new_page()
         page.goto("https://www.instagram.com/", wait_until="domcontentloaded")
-        time.sleep(3)
+        time.sleep(4)
 
         # Verify logged in
         if "login" in page.url or page.query_selector('input[name="username"]'):
@@ -81,37 +81,57 @@ class InstagramPoster:
                 "Session expired. Run 'python create_session.py' again and update INSTA_SESSION."
             )
 
-        log.info("Logged in, navigating to create post...")
+        log.info("Logged in, navigating to create post via direct URL...")
 
-        # Click the Create / + button
+        # Navigate directly to the create page — avoids brittle sidebar button clicks
+        page.goto("https://www.instagram.com/create/select/", wait_until="domcontentloaded")
+        time.sleep(3)
+
+        # If redirected back to home (not on create page), try clicking the + button
+        if "/create/" not in page.url:
+            log.info("Direct URL redirected; trying sidebar create button...")
+            for selector in [
+                'a[href="/create/select/"]',
+                'svg[aria-label="New post"]',
+                '[aria-label="New post"]',
+            ]:
+                try:
+                    el = page.locator(selector).first
+                    if el.is_visible(timeout=3000):
+                        el.click()
+                        time.sleep(2)
+                        break
+                except Exception:
+                    continue
+
+        # Click "Post" if a type-selection dialog appears (Stories / Post / Reel picker)
         try:
-            # Try SVG icon button (desktop layout)
-            create_btn = page.locator('a[href="/create/select/"]').first
-            if not create_btn.is_visible(timeout=3000):
-                raise PWTimeout("not visible")
-            create_btn.click()
-        except Exception:
-            # Fallback: click by aria label
-            page.get_by_label("New post").first.click()
-
-        time.sleep(2)
-
-        # Click "Post" if a type-selection dialog appears
-        try:
-            page.get_by_role("button", name="Post").first.click(timeout=3000)
+            page.get_by_role("button", name="Post").first.click(timeout=4000)
             time.sleep(1)
         except Exception:
             pass  # Already in file select mode
 
-        # Upload images via hidden file input
+        # Wait for file input to be available
         log.info(f"Uploading {len(image_paths)} slides...")
-        file_input = page.locator('input[type="file"]').first
-        file_input.set_files([str(p) for p in image_paths])
-        time.sleep(3)
+        try:
+            file_input = page.locator('input[type="file"]').first
+            file_input.wait_for(timeout=15000)
+        except Exception as e:
+            raise RuntimeError(f"File input not found on create page: {e}")
 
-        # If Instagram asks to select multiple for carousel, click it
+        file_input.set_files([str(p) for p in image_paths])
+        time.sleep(4)
+
+        # If Instagram prompts to select multiple for carousel, accept it
         try:
             page.get_by_role("button", name="Select multiple").click(timeout=3000)
+            time.sleep(1)
+        except Exception:
+            pass
+
+        # OK button on any aspect-ratio / crop dialog
+        try:
+            page.get_by_role("button", name="OK").click(timeout=3000)
             time.sleep(1)
         except Exception:
             pass
@@ -119,14 +139,16 @@ class InstagramPoster:
         # Click through crop step
         self._click_next(page, step="crop")
 
-        # Click through filter step
+        # Click through filter/edit step
         self._click_next(page, step="filters")
 
         # Caption step — add caption
         log.info("Adding caption...")
         try:
-            caption_box = page.locator('[aria-label="Write a caption..."]').first
-            caption_box.wait_for(timeout=8000)
+            caption_box = page.locator(
+                '[aria-label="Write a caption..."], [aria-label="Caption"], textarea'
+            ).first
+            caption_box.wait_for(timeout=10000)
             caption_box.click()
             caption_box.fill(caption[:2200])  # Instagram 2200 char limit
         except Exception as e:
@@ -136,24 +158,30 @@ class InstagramPoster:
 
         # Share / Post
         log.info("Sharing post...")
-        try:
-            page.get_by_role("button", name="Share").click(timeout=5000)
-        except Exception:
-            page.get_by_role("button", name="Post").click(timeout=5000)
+        shared = False
+        for btn_name in ("Share", "Post"):
+            try:
+                page.get_by_role("button", name=btn_name).first.click(timeout=6000)
+                shared = True
+                break
+            except Exception:
+                continue
+        if not shared:
+            raise RuntimeError("Could not find Share/Post button")
 
         # Wait for success confirmation
         try:
             page.wait_for_selector(
-                'text=Your post has been shared, [aria-label="Like"], '
+                ':text("Your post has been shared"), '
+                ':text("Post shared"), '
                 '[data-testid="post-shared"]',
-                timeout=30000,
+                timeout=40000,
             )
             log.info("Post shared successfully!")
         except Exception:
-            # May have posted even without confirmation dialog
-            log.warning("Could not confirm post success, but may have worked")
+            log.warning("Could not confirm post success dialog, but may have posted")
 
-        time.sleep(2)
+        time.sleep(3)
         return "posted"
 
     def _click_next(self, page, step: str = "") -> None:
