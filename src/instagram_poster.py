@@ -111,15 +111,40 @@ class InstagramPoster:
         except Exception:
             pass  # Already in file select mode
 
-        # Wait for file input to be available
+        # Upload files — use file chooser interception (most reliable with React apps)
         log.info(f"Uploading {len(image_paths)} slides...")
-        try:
-            file_input = page.locator('input[type="file"]').first
-            file_input.wait_for(state="attached", timeout=15000)
-        except Exception as e:
-            raise RuntimeError(f"File input not found on create page: {e}")
+        uploaded = False
 
-        file_input.set_files([str(p) for p in image_paths])
+        # Strategy 1: intercept the file chooser triggered by "Select from computer" button
+        try:
+            select_btn = page.get_by_role("button", name="Select from computer").first
+            select_btn.wait_for(state="visible", timeout=10000)
+            with page.expect_file_chooser(timeout=8000) as fc_info:
+                select_btn.click()
+            fc_info.value.set_files([str(p) for p in image_paths])
+            uploaded = True
+            log.info("Uploaded via file chooser (Select from computer)")
+        except Exception as e:
+            log.warning(f"File chooser strategy failed: {e}")
+
+        # Strategy 2: directly set files on the hidden input (React picks it up via dispatchEvent)
+        if not uploaded:
+            try:
+                file_input = page.locator('input[type="file"]').first
+                file_input.wait_for(state="attached", timeout=10000)
+                file_input.set_files([str(p) for p in image_paths])
+                # Dispatch change event so React notices
+                page.evaluate(
+                    """() => {
+                        const input = document.querySelector('input[type="file"]');
+                        if (input) input.dispatchEvent(new Event('change', { bubbles: true }));
+                    }"""
+                )
+                uploaded = True
+                log.info("Uploaded via direct file input + dispatchEvent")
+            except Exception as e:
+                raise RuntimeError(f"All file upload strategies failed: {e}")
+
         time.sleep(4)
 
         # If Instagram prompts to select multiple for carousel, accept it
