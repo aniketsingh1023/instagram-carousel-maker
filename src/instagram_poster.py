@@ -115,7 +115,7 @@ class InstagramPoster:
         log.info(f"Uploading {len(image_paths)} slides...")
         try:
             file_input = page.locator('input[type="file"]').first
-            file_input.wait_for(timeout=15000)
+            file_input.wait_for(state="attached", timeout=15000)
         except Exception as e:
             raise RuntimeError(f"File input not found on create page: {e}")
 
