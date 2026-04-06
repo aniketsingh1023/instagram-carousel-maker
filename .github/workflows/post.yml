@@ -113,6 +113,16 @@ jobs:
           path: data/slides/
           retention-days: 3
 
+      - name: Upload debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-${{ github.run_id }}
+          path: |
+            data/run.log
+            data/debug_*.png
+          retention-days: 2
+
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4

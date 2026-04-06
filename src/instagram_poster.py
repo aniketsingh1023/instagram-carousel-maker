@@ -104,6 +104,14 @@ class InstagramPoster:
                 except Exception:
                     continue
 
+        # Debug: screenshot + log URL so we know exactly what Instagram is showing
+        log.info(f"Current URL after navigation: {page.url}")
+        try:
+            page.screenshot(path="data/debug_01_create_page.png", full_page=True)
+            log.info("Screenshot saved: debug_01_create_page.png")
+        except Exception as se:
+            log.warning(f"Screenshot failed: {se}")
+
         # Click "Post" if a type-selection dialog appears (Stories / Post / Reel picker)
         try:
             page.get_by_role("button", name="Post").first.click(timeout=4000)
@@ -120,7 +128,6 @@ class InstagramPoster:
             log.info("All slides uploaded via 'Select from computer' file chooser")
         except Exception as e:
             log.warning(f"File chooser failed ({e}), trying JS fallback...")
-            # JS fallback: force multiple, upload all at once
             page.evaluate(
                 "document.querySelectorAll('input[type=\"file\"]')"
                 ".forEach(el => { el.multiple = true; })"
@@ -130,6 +137,13 @@ class InstagramPoster:
                 [str(p) for p in image_paths]
             )
             log.info("All slides uploaded via JS multiple=true fallback")
+
+        # Screenshot after upload to see what Instagram shows
+        try:
+            page.screenshot(path="data/debug_02_after_upload.png", full_page=True)
+            log.info("Screenshot saved: debug_02_after_upload.png")
+        except Exception:
+            pass
 
         time.sleep(4)
 
