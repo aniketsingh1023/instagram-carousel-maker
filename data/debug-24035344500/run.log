@@ -1,0 +1,35 @@
+14:17:22 [INFO] Starting carousel maker | dry_run=False
+14:17:23 [INFO] Selected topic: DevOps automation with GitHub Actions
+14:17:23 [INFO] Topic: DevOps automation with GitHub Actions
+14:17:23 [INFO] Calling Gemini (attempt 1/4)...
+14:17:42 [INFO] Generated 7 slides for: DevOps automation with GitHub Actions
+14:17:42 [INFO] Generated 7 slides
+14:17:42 [INFO] Fetched logo for 'DevOps automation with GitHub Actions' → simpleicons:git
+14:17:42 [INFO] Tool logo fetched successfully
+14:17:42 [INFO] Saved slide_01.jpg
+14:17:42 [INFO] Saved slide_02.jpg
+14:17:43 [INFO] Saved slide_03.jpg
+14:17:43 [INFO] Saved slide_04.jpg
+14:17:43 [INFO] Saved slide_05.jpg
+14:17:44 [INFO] Saved slide_06.jpg
+14:17:44 [INFO] Saved slide_07.jpg
+14:17:44 [INFO] Rendered 7 slides to disk
+14:17:44 [INFO] Browser session loaded from secret
+14:17:52 [INFO] Logged in, navigating to create post via direct URL...
+14:17:55 [INFO] Current URL after navigation: https://www.instagram.com/create/select/
+14:17:56 [INFO] Screenshot saved: debug_01_create_page.png
+14:18:00 [INFO] Uploading 7 slides...
+14:18:10 [WARNING] File chooser failed (Locator.click: Timeout 10000ms exceeded.
+Call log:
+  - waiting for get_by_role("button", name="Select from computer").first
+), trying JS fallback...
+14:18:10 [INFO] All slides uploaded via JS multiple=true fallback
+14:18:11 [INFO] Screenshot saved: debug_02_after_upload.png
+14:18:20 [INFO] Clicked Next (crop)
+14:18:22 [INFO] Clicked Next (filters)
+14:18:22 [INFO] Adding caption...
+14:18:23 [INFO] Sharing post...
+14:19:03 [WARNING] Could not confirm post success dialog, but may have posted
+14:19:06 [INFO] Post ID: posted
+14:19:06 [INFO] Slides cleaned up
+14:19:06 [INFO] Done!

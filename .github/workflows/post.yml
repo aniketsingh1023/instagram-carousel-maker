@@ -45,9 +45,6 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Install Playwright browser
-        run: playwright install chromium --with-deps
-
       - name: Cache fonts
         id: font-cache
         uses: actions/cache@v4
@@ -68,42 +65,19 @@ jobs:
           echo "Fonts:"
           ls -lh assets/fonts/
 
-      - name: Restore session cache
-        uses: actions/cache@v4
-        with:
-          path: data/
-          key: ig-session-${{ github.run_id }}
-          restore-keys: ig-session-
-
       - name: Create data dirs
         run: mkdir -p data/slides
 
       - name: Run carousel maker
         id: run
         env:
-          GEMINI_API_KEY:  ${{ secrets.GEMINI_API_KEY }}
-          INSTA_USERNAME:  ${{ secrets.INSTA_USERNAME }}
-          INSTA_PASSWORD:  ${{ secrets.INSTA_PASSWORD }}
-          INSTA_HANDLE:    ${{ secrets.INSTA_HANDLE }}
-          INSTA_SESSION:   ${{ secrets.INSTA_SESSION }}
-          DRY_RUN:         ${{ github.event.inputs.dry_run || 'false' }}
-          TOPIC_OVERRIDE:  ${{ github.event.inputs.topic_override || '' }}
+          GEMINI_API_KEY:   ${{ secrets.GEMINI_API_KEY }}
+          IG_ACCESS_TOKEN:  ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID:       ${{ secrets.IG_USER_ID }}
+          INSTA_HANDLE:     ${{ secrets.INSTA_HANDLE }}
+          DRY_RUN:          ${{ github.event.inputs.dry_run || 'false' }}
+          TOPIC_OVERRIDE:   ${{ github.event.inputs.topic_override || '' }}
         run: python main.py 2>&1 | tee data/run.log
-
-      - name: Check if session was refreshed
-        if: always()
-        run: |
-          NEW_SESSION=$(grep "^NEW_SESSION_B64=" data/run.log 2>/dev/null | tail -1 | cut -d= -f2-)
-          if [ -n "$NEW_SESSION" ]; then
-            echo "::warning::Session was refreshed. Copy the NEW_SESSION_B64 value from the logs and update the INSTA_SESSION secret manually."
-          fi
-
-      - name: Save session cache
-        if: always()
-        uses: actions/cache@v4
-        with:
-          path: data/
-          key: ig-session-${{ github.run_id }}
 
       - name: Upload slides on dry-run (preview)
         if: github.event.inputs.dry_run == 'true'
@@ -112,17 +86,6 @@ jobs:
           name: carousel-preview-${{ github.run_id }}
           path: data/slides/
           retention-days: 3
-
-      - name: Upload debug artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-${{ github.run_id }}
-          path: |
-            data/run.log
-            data/debug_*.png
-            data/slides/
-          retention-days: 2
 
       - name: Upload logs on failure
         if: failure()

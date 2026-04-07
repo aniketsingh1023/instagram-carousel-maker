@@ -22,10 +22,10 @@ def load_config():
     from config import Config
 
     required = {
-        "GEMINI_API_KEY": "Get free key at https://aistudio.google.com/app/apikey",
-        "INSTA_USERNAME": "Your Instagram username (no @)",
-        "INSTA_PASSWORD": "Your Instagram password",
-        "INSTA_HANDLE":   "Your handle for watermark, e.g. @yourusername",
+        "GEMINI_API_KEY":  "Get free key at https://aistudio.google.com/app/apikey",
+        "IG_ACCESS_TOKEN": "Instagram Graph API token (see setup instructions)",
+        "IG_USER_ID":      "Your numeric Instagram user ID (see setup instructions)",
+        "INSTA_HANDLE":    "Your handle for watermark, e.g. @devvoxx",
     }
     missing = {k: v for k, v in required.items() if not os.getenv(k)}
     if missing:
@@ -35,10 +35,10 @@ def load_config():
 
     return Config(
         gemini_key=os.environ["GEMINI_API_KEY"],
-        ig_username=os.environ["INSTA_USERNAME"],
-        ig_password=os.environ["INSTA_PASSWORD"],
+        ig_username="",
+        ig_password="",
         ig_handle=os.environ["INSTA_HANDLE"],
-        insta_session=os.getenv("INSTA_SESSION"),
+        insta_session=None,
         dry_run=os.getenv("DRY_RUN", "false").lower() == "true",
         topic_override=os.getenv("TOPIC_OVERRIDE", "").strip(),
     )
